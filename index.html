@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screen Translator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm utility, an interpreter's booth that stays out of the way.
+   IDEA: a subtitle monitor; what you snipped goes in, the line in your language comes out large.
+   PICTURE: the translation readout itself, big type on a black screen, filling the top.
+   COLOUR and TYPE: steel panel, black screen, white text, one alarm red accent. Inter Tight + Inter.
+   LAYOUT: one column; readout first, then the drop zone and controls, history at the foot. */
+:root{color-scheme:light dark;
+  --bg:light-dark(#d5dbe0,#16191c);--panel:light-dark(#e9edf0,#1f2327);--ink:light-dark(#0d0f11,#eef1f3);
+  --mute:light-dark(#4d5660,#9aa4ad);--line:light-dark(#b9c1c8,#30363c);--screen:#0b0c0d;--onscreen:#ffffff;
+  --red:#e8251a;--redsoft:light-dark(#fde5e3,#3a1714)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif;overflow-x:clip}
+h1{font:700 22px/1.1 "Inter Tight",Inter,sans-serif;margin:0;letter-spacing:-.01em}
+.wrap{max-width:760px;margin:0 auto;padding:14px max(4vw,14px) 40px}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:6px 0 12px;-webkit-app-region:drag;app-region:drag}
+header .sp{flex:1}
+header select,header input,header button{-webkit-app-region:no-drag;app-region:no-drag}
+label.lang{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mute)}
+select,input[type=text]{font:16px Inter,sans-serif;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink)}
+button{font:600 15px Inter,sans-serif;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button.primary{background:var(--red);border-color:var(--red);color:#fff}
+button:focus-visible,select:focus-visible,input:focus-visible,.drop:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+button[disabled]{opacity:.5;cursor:default}
+.screen{background:var(--screen);color:var(--onscreen);border-radius:16px;padding:22px 22px 16px;min-height:220px;display:flex;flex-direction:column;gap:12px;box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 10px 30px rgba(0,0,0,.18)}
+.meta{display:flex;gap:10px;align-items:center;font-size:13px;color:#a9b1b8;flex-wrap:wrap}
+.dot{width:9px;height:9px;border-radius:50%;background:#59616a;flex:none}
+.dot.on{background:var(--red);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.dot.on{animation:none}}
+#out{font:600 clamp(20px,3.4vw,28px)/1.35 Inter,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;flex:1}
+#out.empty{color:#7d868e;font-weight:500;font-size:18px}
+details.orig{font-size:14px;color:#c3c9ce}
+details.orig summary{cursor:pointer;color:#a9b1b8}
+#orig{white-space:pre-wrap;margin-top:6px;overflow-wrap:anywhere}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.drop{margin-top:14px;border:2px dashed var(--line);border-radius:14px;padding:18px;text-align:center;background:var(--panel);cursor:pointer}
+.drop.hot{border-color:var(--red);background:var(--redsoft)}
+.drop b{display:block;font:700 17px "Inter Tight",Inter,sans-serif;margin-bottom:4px}
+.drop small{color:var(--mute);font-size:14px}
+kbd{font:600 13px Inter,sans-serif;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;background:var(--bg)}
+#thumb{display:none;max-height:120px;max-width:100%;border-radius:8px;margin:10px auto 0;border:1px solid var(--line)}
+.live{margin-top:14px;border:1px solid var(--line);border-radius:14px;padding:14px;background:var(--panel)}
+.live h2,.hist h2{font:700 16px "Inter Tight",Inter,sans-serif;margin:0 0 4px}
+.live p,.hist p{margin:0;color:var(--mute);font-size:14px}
+video{display:none;width:100%;max-height:180px;border-radius:8px;margin-top:10px;background:#000}
+.note{font-size:14px;color:var(--mute);margin-top:8px}
+.note.err{color:var(--red)}
+.langbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:12px;align-items:end;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px}
+.lb{display:flex;flex-direction:column;gap:6px}
+.lbl{font-size:13px;color:var(--mute);font-weight:500}
+#fromLang{font:700 20px/1.2 "Inter Tight",Inter,sans-serif;min-height:44px;display:flex;align-items:center}
+#fromLang.wait{color:var(--mute);font-weight:500;font-size:16px}
+.langbar select{font-weight:600;font-size:17px;border-color:var(--red);border-width:2px}
+.arrow{font:700 26px/1 Inter,sans-serif;color:var(--red);padding-bottom:9px}
+.pair{color:#fff;font-weight:600}
+.pairs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:20px;flex:1}
+.pairs .h{font-size:13px;color:#a9b1b8;padding-bottom:6px;border-bottom:1px solid #2c3136}
+.pairs .h.t{color:#ff8a80}
+.pairs .o,.pairs .t{padding:10px 0;border-bottom:1px solid #2c3136;white-space:pre-wrap;overflow-wrap:anywhere}
+.pairs .o{color:#c3c9ce;font-size:16px}
+.pairs .t{color:#fff;font:600 clamp(17px,2.2vw,20px)/1.4 Inter,sans-serif}
+@media(max-width:600px){.pairs{grid-template-columns:1fr}.pairs .h{display:none}.pairs .o{border-bottom:0;padding-bottom:2px;font-size:14px}.pairs .t{padding-top:2px}}
+.hist{margin-top:18px}
+.hist ol{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:8px}
+.hist li{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px}
+.hist li span{display:block;color:var(--mute);font-size:13px}
+.tiny{font-size:13px;color:var(--mute);margin-top:18px}
+@media(max-width:600px){header{gap:8px}.screen{padding:16px}.langbar{grid-template-columns:1fr}.arrow{transform:rotate(90deg);justify-self:start;padding:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Screen Translator</h1>
+  </header>
+
+  <section class="live" id="setup" style="margin:0 0 14px">
+    <h2>Claude API key</h2>
+    <p>Paste your key from console.anthropic.com. It stays in this browser on this computer.</p>
+    <div class="row">
+      <input type="password" id="key" placeholder="sk-ant-..." autocomplete="off" style="flex:1 1 260px" aria-label="API key">
+      <button id="saveKey" class="primary">Save key</button>
+      <select id="model" aria-label="Model">
+        <option value="claude-haiku-5-5">Haiku 5.5 (fast, cheapest)</option>
+        <option value="claude-sonnet-5-5">Sonnet 5.5 (more accurate)</option>
+      </select>
+    </div>
+    <div class="note" id="keyNote"></div>
+  </section>
+
+  <section class="langbar" aria-label="Languages">
+    <div class="lb">
+      <span class="lbl">Detected language</span>
+      <b id="fromLang" class="wait">Waiting for text</b>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="lb">
+      <label class="lbl" for="lang">Translate into</label>
+      <select id="lang"></select>
+      <input type="text" id="langOther" placeholder="Type any language" hidden aria-label="Other language">
+    </div>
+  </section>
+
+  <section class="screen" aria-live="polite">
+    <div class="meta"><span class="dot" id="dot"></span><span id="status">Ready</span><span id="detected"></span></div>
+    <div id="out" class="empty">Snip part of your screen, then press Ctrl+V here. The translation appears in this box.</div>
+    <div class="pairs" id="pairs" hidden></div>
+    <details class="orig" id="origBox" hidden><summary>Original text</summary><div id="orig"></div></details>
+    <div class="row" style="margin-top:4px">
+      <button id="copy" disabled>Copy translation</button>
+      <button id="again" disabled>Translate again</button>
+      <button id="view">Translation only</button>
+      <span style="flex:1"></span>
+      <button id="clear">Clear</button>
+    </div>
+  </section>
+
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="Paste or choose a screenshot">
+    <b>Paste a screenshot</b>
+    <small>Windows: <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>, then <kbd>Ctrl</kbd>+<kbd>V</kbd> here.
+    Mac: <kbd>Cmd</kbd>+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd>, then <kbd>Cmd</kbd>+<kbd>V</kbd>.<br>
+    You can also paste plain text, drop an image, or click to choose a file.</small>
+    <img id="thumb" alt="Last screenshot">
+    <input type="file" id="file" accept="image/*" hidden>
+  </div>
+
+  <section class="live">
+    <h2>Live mode</h2>
+    <p>Share a window, like a video, and it translates new text every few seconds.</p>
+    <div class="row">
+      <button id="share">Share a window</button>
+      <button id="stop" disabled>Stop</button>
+      <select id="area" aria-label="Part of the window to read">
+        <option value="full">Whole window</option>
+        <option value="bottom">Bottom third (subtitles)</option>
+        <option value="top">Top half</option>
+      </select>
+      <select id="every" aria-label="How often">
+        <option value="3">Every 3 s</option>
+        <option value="5" selected>Every 5 s</option>
+        <option value="10">Every 10 s</option>
+      </select>
+    </div>
+    <video id="vid" muted playsinline></video>
+    <div class="note" id="liveNote"></div>
+  </section>
+
+  <section class="hist">
+    <div class="row" style="margin:0;justify-content:space-between"><h2>Recent</h2><button id="clearHist">Clear history</button></div>
+    <ol id="hist"></ol>
+    <p id="histEmpty">Nothing yet.</p>
+  </section>
+
+  <p class="tiny">Each snip is sent to the Claude API with your key and billed to your Anthropic account. Set a monthly spend limit in the Console to stay safe.</p>
+</div>
+
+<script>
+{
+const $ = id => document.getElementById(id);
+const LANGS = ["English","Filipino (Tagalog)","Spanish","Chinese (Simplified)","Chinese (Traditional)","Japanese","Korean","Vietnamese","Thai","Indonesian","Malay","Hindi","Arabic","French","German","Italian","Portuguese","Russian","Turkish","Cebuano","Ilocano","Kapampangan","Bikol","Other..."];
+const store = {get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+
+const sel=$("lang"), other=$("langOther");
+sel.innerHTML = LANGS.map(l=>`<option>${l}</option>`).join("");
+sel.value = store.get("lang","English"); other.value = store.get("langOther","");
+const syncOther=()=>{other.hidden = sel.value!=="Other..."};
+syncOther();
+sel.onchange=()=>{store.set("lang",sel.value);syncOther();if(!other.hidden){other.focus();return}if(lastInput)translate(lastInput)};
+other.oninput=()=>store.set("langOther",other.value);
+other.onchange=()=>{if(lastInput&&other.value.trim())translate(lastInput)};
+const target=()=> sel.value==="Other..." ? (other.value.trim()||"English") : sel.value;
+
+let sample=null, canImages=false, busy=false, lastInput=null, ctrl=null;
+let history = store.get("hist",[]);
+
+function setStatus(t,on){$("status").textContent=t;$("dot").classList.toggle("on",!!on)}
+function show(res,lang){
+  const fl=$("fromLang");
+  fl.textContent = res.source_language || "Not sure";
+  fl.classList.remove("wait");
+  const out=$("out");
+  out.classList.remove("empty");
+  out.textContent = res.translation || "(No text found)";
+  const d=$("detected"); d.className="pair";
+  d.textContent = (res.source_language||"Unknown") + "  →  " + lang;
+  $("orig").textContent = res.original || "";
+  let lines = Array.isArray(res.lines) ? res.lines.filter(l=>l&&(l.o||l.t)) : [];
+  if(!lines.length && res.translation) lines=[{o:res.original||"",t:res.translation}];
+  lastRes={res,lang,lines}; render();
+  $("copy").disabled = !res.translation;
+  $("again").disabled = !lastInput;
+}
+let lastRes=null, sideBySide=store.get("side",true);
+function render(){
+  const out=$("out"), pairs=$("pairs"), ob=$("origBox");
+  $("view").textContent = sideBySide ? "Translation only" : "Side by side";
+  if(!lastRes) return;
+  const {res,lang,lines}=lastRes;
+  const useSide = sideBySide && lines.length>0;
+  out.hidden = useSide; pairs.hidden = !useSide;
+  ob.hidden = useSide || !res.original;
+  if(useSide){
+    pairs.innerHTML = `<div class="h">${esc(res.source_language||"Original")}</div><div class="h t">${esc(lang)}</div>` +
+      lines.map(l=>`<div class="o">${esc(l.o||"")}</div><div class="t">${esc(l.t||"")}</div>`).join("");
+  }
+}
+$("view").onclick=()=>{sideBySide=!sideBySide;store.set("side",sideBySide);render()};
+render();
+function renderHist(){
+  $("hist").innerHTML = history.map(h=>`<li>${esc(h.t)}<span>${esc(h.from||"")} → ${esc(h.to)}</span></li>`).join("");
+  $("histEmpty").hidden = history.length>0;
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+renderHist();
+
+function parse(text){
+  const m = text.match(/\{[\s\S]*\}/);
+  if(m){try{return JSON.parse(m[0])}catch{}}
+  return {translation:text.trim()};
+}
+
+async function translate(input, quiet){
+  const key=store.get("key","");
+  if(!key){setStatus("Add your API key first");$("key").focus();return null}
+  if(busy) return null;
+  busy=true; lastInput=input;
+  const lang=target();
+  setStatus(quiet?"Reading new text...":"Translating into "+lang+"...", true);
+  if(ctrl) ctrl.abort(); ctrl=new AbortController();
+  const rules = `You are a screen translator. Target language: ${lang}.
+Return ONLY a JSON object: {"source_language": string, "original": string, "translation": string, "lines": array}.
+- "source_language": the language of the original text, in English, plainly named (e.g. "Russian"). If written in another script than usual, say so, e.g. "Russian (in Latin letters)". If several languages appear, list them, e.g. "English and Russian".
+- "original": the readable text, in reading order, line breaks kept. For images, read only meaningful text (captions, subtitles, messages, signs); skip UI chrome like menus, timestamps and button labels unless that is all there is.
+- "translation": that text translated naturally into ${lang}. If it is already in ${lang}, repeat it.
+- "lines": the same content split into aligned pairs, one per message, caption or sentence, in reading order: [{"o": original, "t": translation}]. Keep a speaker name with its line if shown.
+- If there is no readable text, use "" for original and translation and [] for lines.`;
+  try{
+    const content=[];
+    if(input.blob){content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:await b64(input.blob)}});content.push({type:"text",text:rules+"\n\nTranslate the text in the attached screenshot."});}
+    else content.push({type:"text",text:rules+"\n\nText:\n"+input.text});
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",signal:ctrl.signal,
+      headers:{"x-api-key":key,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:$("model").value,max_tokens:4000,messages:[{role:"user",content}]})});
+    if(!resp.ok){const j=await resp.json().catch(()=>({}));
+      throw {code:resp.status===429?"rate_limited":resp.status===401?"bad_key":"http",message:j?.error?.message||("HTTP "+resp.status)}}
+    const j=await resp.json();
+    const res = parse((j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join(""));
+    if(quiet && !res.translation){setStatus("Watching",true);return res}
+    show(res,lang);
+    if(res.translation){
+      history.unshift({t:res.translation.slice(0,240),from:res.source_language||"",to:lang});
+      history=history.slice(0,12); store.set("hist",history); renderHist();
+    }
+    setStatus(live?"Watching":"Done", !!live);
+    return res;
+  }catch(e){
+    if(e?.name==="AbortError") return null;
+    const msg = e?.code==="rate_limited" ? "Too many requests. Wait a moment." :
+                e?.code==="bad_key" ? "Your API key was rejected. Check it and save again." :
+                "Could not translate: " + (e?.message||"error");
+    setStatus(msg,false); if(e?.code==="rate_limited"&&live) stopLive();
+    return null;
+  }finally{busy=false}
+}
+
+/* Shrink big images so they send fast */
+async function toJpeg(src, area){
+  const bmp = src instanceof Blob ? await createImageBitmap(src) : src;
+  const sw = bmp.videoWidth||bmp.width, sh = bmp.videoHeight||bmp.height;
+  let sy=0, h=sh;
+  if(area==="bottom"){sy=Math.round(sh*2/3);h=sh-sy}
+  if(area==="top"){h=Math.round(sh/2)}
+  const scale=Math.min(1,1600/sw);
+  const c=document.createElement("canvas"); c.width=Math.round(sw*scale); c.height=Math.round(h*scale);
+  c.getContext("2d").drawImage(bmp,0,sy,sw,h,0,0,c.width,c.height);
+  return {blob: await new Promise(r=>c.toBlob(r,"image/jpeg",.85)), canvas:c};
+}
+
+async function handleImage(file){
+  if(!canImages){setStatus("Image reading is not available here. Paste text instead.");return}
+  const {blob}=await toJpeg(file,"full");
+  const th=$("thumb"); th.src=URL.createObjectURL(blob); th.style.display="block";
+  translate({blob});
+}
+
+document.addEventListener("paste", e=>{
+  if(e.target.closest&&e.target.closest("input,textarea,select")) return;
+  const items=[...(e.clipboardData?.items||[])];
+  const img=items.find(i=>i.type.startsWith("image/"));
+  if(img){e.preventDefault();handleImage(img.getAsFile());return}
+  const text=e.clipboardData?.getData("text/plain");
+  if(text&&text.trim()){e.preventDefault();$("thumb").style.display="none";translate({text:text.slice(0,8000)})}
+});
+const drop=$("drop");
+drop.onclick=()=>$("file").click();
+drop.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("file").click()}};
+$("file").onchange=e=>{const f=e.target.files[0]; if(f) handleImage(f); e.target.value=""};
+drop.ondragover=e=>{e.preventDefault();drop.classList.add("hot")};
+drop.ondragleave=()=>drop.classList.remove("hot");
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove("hot");const f=[...e.dataTransfer.files].find(f=>f.type.startsWith("image/"));if(f)handleImage(f)};
+
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("out").textContent);$("copy").textContent="Copied";setTimeout(()=>$("copy").textContent="Copy translation",1500)}catch{setStatus("Copy was blocked. Select the text and copy it.")}};
+$("again").onclick=()=>{if(lastInput)translate(lastInput)};
+const EMPTY = $("out").textContent;
+$("clear").onclick=()=>{
+  if(ctrl) ctrl.abort(); busy=false;
+  if(live) stopLive();
+  lastInput=null; lastRes=null;
+  const out=$("out"); out.hidden=false; out.className="empty"; out.textContent=EMPTY;
+  $("pairs").hidden=true; $("pairs").innerHTML=""; $("origBox").hidden=true; $("orig").textContent="";
+  const fl=$("fromLang"); fl.textContent="Waiting for text"; fl.classList.add("wait");
+  $("detected").textContent=""; $("thumb").style.display="none"; $("thumb").removeAttribute("src");
+  $("copy").disabled=true; $("again").disabled=true; $("liveNote").textContent="";
+  setStatus("Ready"); $("drop").focus();
+};
+$("clearHist").onclick=()=>{history=[];store.set("hist",history);renderHist()};
+
+/* Live mode: only sends a frame when the picture changed */
+let live=null, timer=null, prevSig=null;
+function signature(canvas){
+  const s=document.createElement("canvas"); s.width=48; s.height=27;
+  const g=s.getContext("2d"); g.drawImage(canvas,0,0,48,27);
+  const d=g.getImageData(0,0,48,27).data, out=new Uint8Array(48*27);
+  for(let i=0;i<out.length;i++) out[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;
+  return out;
+}
+function changed(a,b){if(!b)return true;let t=0;for(let i=0;i<a.length;i++)t+=Math.abs(a[i]-b[i]);return t/a.length>4}
+async function tick(){
+  const v=$("vid"); if(!live||!v.videoWidth||busy) return;
+  const {blob,canvas}=await toJpeg(v,$("area").value);
+  const sig=signature(canvas);
+  if(!changed(sig,prevSig)) return;
+  prevSig=sig; translate({blob},true);
+}
+function stopLive(){
+  if(live) live.getTracks().forEach(t=>t.stop());
+  live=null; clearInterval(timer); prevSig=null;
+  $("vid").style.display="none"; $("share").disabled=false; $("stop").disabled=true;
+  setStatus("Ready");
+}
+$("share").onclick=async()=>{
+  const note=$("liveNote"); note.className="note"; note.textContent="";
+  if(!canImages){note.textContent="Image reading is not available here.";return}
+  try{
+    live=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:2},audio:false});
+  }catch(e){
+    note.className="note err";
+    note.textContent="Screen sharing was cancelled or blocked. Try again, or use paste above.";
+    return;
+  }
+  const v=$("vid"); v.srcObject=live; v.style.display="block"; await v.play().catch(()=>{});
+  live.getVideoTracks()[0].onended=stopLive;
+  $("share").disabled=true; $("stop").disabled=false; setStatus("Watching",true);
+  const run=()=>{clearInterval(timer);timer=setInterval(tick,(+$("every").value)*1000)};
+  run(); $("every").onchange=run; $("area").onchange=()=>{prevSig=null};
+  setTimeout(tick,600);
+};
+$("stop").onclick=stopLive;
+
+/* API key and model */
+function b64(blob){return new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(",")[1]);r.onerror=no;r.readAsDataURL(blob)})}
+const keyIn=$("key"), keyNote=$("keyNote"), model=$("model");
+model.value=store.get("model","claude-haiku-5-5"); model.onchange=()=>store.set("model",model.value);
+const showKey=()=>{const k=store.get("key","");keyNote.textContent=k?"Key saved (ends in "+k.slice(-4)+"). You're ready.":"No key saved yet.";
+  if(!k)$("out").textContent="Add your Claude API key above, then snip and paste."};
+$("saveKey").onclick=()=>{const k=keyIn.value.trim();if(!k.startsWith("sk-ant-")){keyNote.textContent="That doesn't look like a Claude API key. It starts with sk-ant-.";return}
+  store.set("key",k);keyIn.value="";showKey();setStatus("Ready")};
+sample=true; canImages=true; showKey();
+}
+</script>
+</body>
+</html>
