@@ -84,14 +84,14 @@ video{display:none;width:100%;max-height:180px;border-radius:8px;margin-top:10px
   </header>
 
   <section class="live" id="setup" style="margin:0 0 14px">
-    <h2>Claude API key</h2>
-    <p>Paste your key from console.anthropic.com. It stays in this browser on this computer.</p>
+    <h2>Invite code</h2>
+    <p>Enter the code you were given. It stays in this browser.</p>
     <div class="row">
-      <input type="password" id="key" placeholder="sk-ant-..." autocomplete="off" style="flex:1 1 260px" aria-label="API key">
-      <button id="saveKey" class="primary">Save key</button>
-      <select id="model" aria-label="Model">
-        <option value="claude-haiku-5-5">Haiku 5.5 (fast, cheapest)</option>
-        <option value="claude-sonnet-5-5">Sonnet 5.5 (more accurate)</option>
+      <input type="text" id="key" placeholder="e.g. k7m2-q9xa" autocomplete="off" autocapitalize="none" spellcheck="false" style="flex:1 1 220px" aria-label="Invite code">
+      <button id="saveKey" class="primary">Save code</button>
+      <select id="model" aria-label="Accuracy">
+        <option value="claude-haiku-5-5">Fast</option>
+        <option value="claude-sonnet-5-5">More accurate</option>
       </select>
     </div>
     <div class="note" id="keyNote"></div>
@@ -160,7 +160,7 @@ video{display:none;width:100%;max-height:180px;border-radius:8px;margin-top:10px
     <p id="histEmpty">Nothing yet.</p>
   </section>
 
-  <p class="tiny">Each snip is sent to the Claude API with your key and billed to your Anthropic account. Set a monthly spend limit in the Console to stay safe.</p>
+  <p class="tiny">Privacy: screenshots and text you paste are sent to Anthropic's Claude to be read and translated, and are not stored by this site. Please don't snip passwords or private financial details. This is an invite-only beta.</p>
 </div>
 
 <script>
@@ -229,8 +229,8 @@ function parse(text){
 }
 
 async function translate(input, quiet){
-  const key=store.get("key","");
-  if(!key){setStatus("Add your API key first");$("key").focus();return null}
+  const key=store.get("code","");
+  if(!key){setStatus("Enter your invite code first");$("key").focus();return null}
   if(busy) return null;
   busy=true; lastInput=input;
   const lang=target();
@@ -244,16 +244,15 @@ Return ONLY a JSON object: {"source_language": string, "original": string, "tran
 - "lines": the same content split into aligned pairs, one per message, caption or sentence, in reading order: [{"o": original, "t": translation}]. Keep a speaker name with its line if shown.
 - If there is no readable text, use "" for original and translation and [] for lines.`;
   try{
-    const content=[];
-    if(input.blob){content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:await b64(input.blob)}});content.push({type:"text",text:rules+"\n\nTranslate the text in the attached screenshot."});}
-    else content.push({type:"text",text:rules+"\n\nText:\n"+input.text});
-    const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",signal:ctrl.signal,
-      headers:{"x-api-key":key,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:$("model").value,max_tokens:4000,messages:[{role:"user",content}]})});
-    if(!resp.ok){const j=await resp.json().catch(()=>({}));
-      throw {code:resp.status===429?"rate_limited":resp.status===401?"bad_key":"http",message:j?.error?.message||("HTTP "+resp.status)}}
-    const j=await resp.json();
-    const res = parse((j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join(""));
+    const payload={model:$("model").value};
+    if(input.blob){payload.image=await b64(input.blob);payload.prompt=rules+"\n\nTranslate the text in the attached screenshot.";}
+    else payload.prompt=rules+"\n\nText:\n"+input.text;
+    const resp=await fetch(API+"/translate",{method:"POST",signal:ctrl.signal,
+      headers:{"Content-Type":"application/json","X-Invite-Code":key},body:JSON.stringify(payload)});
+    const j=await resp.json().catch(()=>({}));
+    if(!resp.ok) throw {code:j.code||(resp.status===401?"bad_key":"http"),message:j.error||("HTTP "+resp.status)};
+    if(typeof j.remaining==="number") $("keyNote").textContent=`Code saved${j.name?" for "+j.name:""}. ${j.remaining} translations left today.`;
+    const res = parse(j.text||"");
     if(quiet && !res.translation){setStatus("Watching",true);return res}
     show(res,lang);
     if(res.translation){
@@ -264,10 +263,12 @@ Return ONLY a JSON object: {"source_language": string, "original": string, "tran
     return res;
   }catch(e){
     if(e?.name==="AbortError") return null;
-    const msg = e?.code==="rate_limited" ? "Too many requests. Wait a moment." :
-                e?.code==="bad_key" ? "Your API key was rejected. Check it and save again." :
+    const msg = e?.code==="bad_code"||e?.code==="bad_key" ? "That invite code isn't valid. Check it and save again." :
+                e?.code==="limit" ? e.message :
+                e?.code==="rate_limited" ? "Busy right now. Wait a moment." :
+                e instanceof TypeError ? "Can't reach the translator. Check your internet connection." :
                 "Could not translate: " + (e?.message||"error");
-    setStatus(msg,false); if(e?.code==="rate_limited"&&live) stopLive();
+    setStatus(msg,false); if((e?.code==="rate_limited"||e?.code==="limit")&&live) stopLive();
     return null;
   }finally{busy=false}
 }
@@ -366,14 +367,18 @@ $("share").onclick=async()=>{
 };
 $("stop").onclick=stopLive;
 
-/* API key and model */
+/* Backend address: set this to your Cloudflare Worker URL */
+const API = "https://screen-translator.REPLACE-ME.workers.dev";
+if(API.includes("REPLACE-ME")) setTimeout(()=>setStatus("Setup needed: the backend address is not set yet"),0);
+/* Invite code and model */
 function b64(blob){return new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(",")[1]);r.onerror=no;r.readAsDataURL(blob)})}
 const keyIn=$("key"), keyNote=$("keyNote"), model=$("model");
 model.value=store.get("model","claude-haiku-5-5"); model.onchange=()=>store.set("model",model.value);
-const showKey=()=>{const k=store.get("key","");keyNote.textContent=k?"Key saved (ends in "+k.slice(-4)+"). You're ready.":"No key saved yet.";
-  if(!k)$("out").textContent="Add your Claude API key above, then snip and paste."};
-$("saveKey").onclick=()=>{const k=keyIn.value.trim();if(!k.startsWith("sk-ant-")){keyNote.textContent="That doesn't look like a Claude API key. It starts with sk-ant-.";return}
-  store.set("key",k);keyIn.value="";showKey();setStatus("Ready")};
+const showKey=()=>{const k=store.get("code","");keyNote.textContent=k?"Code saved. You're ready.":"No code saved yet.";
+  if(k)keyIn.value=k; else $("out").textContent="Enter your invite code above, then snip and paste."};
+$("saveKey").onclick=()=>{const k=keyIn.value.trim().toLowerCase();if(k.length<4){keyNote.textContent="Please enter the full invite code.";return}
+  store.set("code",k);showKey();setStatus("Ready")};
+keyIn.onkeydown=e=>{if(e.key==="Enter")$("saveKey").click()};
 sample=true; canImages=true; showKey();
 }
 </script>
