@@ -6,7 +6,7 @@
 //   INVITE_CODES       secret  JSON, code -> friend's name, e.g. {"k7m2-q9xa":"Maria","p3vt-8hzd":"JR"}
 //   ADMIN_TOKEN        secret  any long password, used to view usage
 //   ALLOWED_ORIGINS    text    comma list, e.g. https://eab114.github.io
-//   DAILY_LIMIT        text    translations per code per day (default 150)
+//   DAILY_LIMIT        text    translations per code per day (default 50)
 // Binding:
 //   USAGE              KV namespace, stores daily counts
 
@@ -59,7 +59,7 @@ export default {
     if (!who) return json({ error: "That invite code isn't valid.", code: "bad_code" }, 401);
 
     // Daily limit
-    const limit = Number(env.DAILY_LIMIT) || 150;
+    const limit = Number(env.DAILY_LIMIT) || 50;
     const key = `day:${today}:${code}`;
     const used = Number(await env.USAGE.get(key)) || 0;
     if (used >= limit) return json({ error: `Daily limit of ${limit} reached. It resets at midnight UTC.`, code: "limit" }, 429);

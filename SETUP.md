@@ -5,7 +5,7 @@ The page (`index.html`) runs on GitHub Pages. A small Cloudflare Worker (`worker
 ## 1. Anthropic
 
 1. At console.anthropic.com, create an API key and add credit.
-2. Under Limits, set a **monthly spend limit** (for example $20). This is your hard ceiling.
+2. Under Limits, set a **monthly spend limit** (for example $20, with an alert at $10). This is your hard ceiling.
 
 ## 2. Cloudflare Worker (free plan is enough)
 
@@ -22,7 +22,7 @@ The page (`index.html`) runs on GitHub Pages. A small Cloudflare Worker (`worker
 | `INVITE_CODES` | Secret | the JSON of codes and names |
 | `ADMIN_TOKEN` | Secret | a long password for the usage report |
 | `ALLOWED_ORIGINS` | Text | `https://eab114.github.io` |
-| `DAILY_LIMIT` | Text | `150` |
+| `DAILY_LIMIT` | Text | `50` |
 
 7. Copy the Worker's address, like `https://screen-translator.yourname.workers.dev`.
 
